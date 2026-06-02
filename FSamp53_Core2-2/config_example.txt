@@ -1,0 +1,44 @@
+# =============================================
+# M5Stack Device Configuration Example
+# =============================================
+#
+# Place this file on the microSD card root
+# with the filename 'config.txt'.
+#
+# Insert the SD card into M5Stack Core2 and
+# power on. The device reads config at boot.
+#
+# Lines starting with '#' are comments and ignored.
+# Format: key=value
+#
+# =============================================
+
+# ----- WiFi Settings -----
+# SSID and password for the WiFi network
+wifi_ssid=YourSSID
+wifi_password=YourPassword
+
+# ----- Device Settings -----
+# device_id  : Unique numeric ID (1-255) embedded in data packets
+# device_name: Human-readable name sent back in SEARCH_ACK responses
+#              Max 31 characters, no spaces
+device_id=1
+device_name=FSensor_A
+
+# ----- Network Ports -----
+# data_port: UDP port for sending sensor data to PC
+# cmd_port : UDP port for receiving commands from PC
+data_port=8000
+cmd_port=8001
+
+# ----- Sampling Rate -----
+# Default sampling rate in Hz (1-1000)
+sample_rate=200
+
+# ----- Calibration Matrix -----
+# 3x3 matrix for force calculation from voltage.
+# Each row is 3 comma-separated float values.
+# F = MATRIX * V  (V = offset-corrected voltage vector)
+matrix_row0=0.01178285, 0.42417336, -0.62513834
+matrix_row1=-0.3731538, -0.18295395, -0.37187675
+matrix_row2=0.3773194, -0.22511071, -0.49920508

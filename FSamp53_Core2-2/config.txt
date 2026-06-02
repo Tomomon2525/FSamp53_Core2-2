@@ -1,0 +1,25 @@
+# === M5Stack Device Configuration ===
+# Place this file on the SD card root as /config.txt
+#
+# Lines starting with '#' are comments and ignored.
+# Format: key=value
+
+# WiFi Settings
+wifi_ssid=
+wifi_password=
+
+# Device Settings
+device_id=1
+device_name=bosi
+
+# Network Ports
+data_port=8000
+cmd_port=8001
+
+# Sampling Rate (Hz)
+sample_rate=200
+
+# Calibration Matrix (3x3, comma-separated per row)
+matrix_row0=0.01178285, 0.42417336, -0.62513834
+matrix_row1=-0.3731538, -0.18295395, -0.37187675
+matrix_row2=0.3773194, -0.22511071, -0.49920508
