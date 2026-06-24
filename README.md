@@ -15,7 +15,7 @@ M5Stack Core2 をセンサノードとして使用し、WiFi（UDP）経由でPC
 ## ファイル構成
 
 ```
-M5Stack-Core2_MEMSmeasurement/
+M5Stack-Core2-2/
 ├── FSamp53_Core2-2/          # ファームウェア (PlatformIO)
 │   ├── platformio.ini
 │   ├── config.txt            # デバイス設定 (SDカード用)
