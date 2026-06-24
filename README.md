@@ -33,4 +33,4 @@ M5Stack-Core2-2/
 
 ## 使い方
 
-詳細は `system_manual.pdf` を参照してください。
+詳細は `system_manual_ver1.0.pdf` を参照してください。
