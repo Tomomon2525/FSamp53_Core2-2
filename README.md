@@ -1,4 +1,4 @@
-# M5Stack 多チャンネル無線力センサ計測システム
+# M5Stack 多チャンネル無線力センサ計測システムver1.0
 
 M5Stack Core2 をセンサノードとして使用し、WiFi（UDP）経由でPCにリアルタイムデータを送信・記録する複数デバイス対応の無線計測システムです。
 
@@ -21,13 +21,13 @@ M5Stack-Core2-2/
 │   ├── config.txt            # デバイス設定 (SDカード用)
 │   ├── config_example.txt    # 設定ファイルの記入例
 │   └── src/
-│       ├── minimal_main_sensor.cpp   # 本番用（実センサ）
-│       └── minimal_main_dammy.cpp    # テスト用（ダミーデータ）
+│       ├── M5_main_sensor_ver1.0.cpp   # 本番用（実センサ）
+│       └── M5_main_dammy_ver1.0.cpp    # テスト用（ダミーデータ）
 ├── pc_client/                # PC側GUIクライアント
 │   ├── config.ini            # PC側設定ファイル
-│   └── gui_client.py         # GUIクライアント
+│   └── gui_client_ver1.0.py         # GUIクライアント
 ├── figures/                  # マニュアル用画像
-├── system_manual.pdf         # システム説明書
+├── system_manual_ver1.0.pdf         # システム説明書
 └── README.md
 ```
 

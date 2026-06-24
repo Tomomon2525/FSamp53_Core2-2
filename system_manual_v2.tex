@@ -1,0 +1,553 @@
+\documentclass[a4paper,10pt]{ltjsarticle}
+
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{geometry}
+\geometry{margin=25mm}
+\usepackage{fancyvrb}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!60!black,
+  urlcolor=blue!60!black,
+}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  backgroundcolor=\color{gray!10},
+  numbers=none,
+  tabsize=4,
+}
+
+\title{M5Stack 多チャンネル無線力センサ計測システム — 説明書 ver1.0}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+% ==================================================
+\section{システム概要}
+% ==================================================
+
+本システムは、\textbf{M5Stack Core2} をセンサノードとして使用し、WiFi（UDP）経由でPC上のGUIクライアントにリアルタイムデータを送信・記録する\textbf{複数デバイス対応の無線計測システム}です。
+
+\subsection{主な特徴}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{ll}
+\toprule
+\textbf{項目} & \textbf{仕様} \\
+\midrule
+センサノード & M5Stack Core2（6台以上同時対応） \\
+通信方式 & WiFi UDP（ブロードキャスト＋ユニキャスト） \\
+計測チャンネル & 3ch アナログ電圧（オフセット補正後）+ 6軸IMU + 3軸力 \\
+サンプリングレート & 1〜1000\,Hz（デフォルト200\,Hz、6台計測時 最大300\,Hz程度） \\
+データ保存形式 & CSV（デバイスごとに個別ファイル） \\
+PCクライアント & Python（matplotlib GUI） \\
+ファームウェアビルド & PlatformIO \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{ファイル構成}
+
+\begin{lstlisting}
+M5Stack-Core2_MEMSmeasurement/
++-- FSamp53_Core2-2/
+|   +-- platformio.ini                        # PlatformIO設定
+|   +-- config.txt                            # デバイス設定 (SDカード用)
+|   +-- config_example.txt                    # 設定ファイルの記入例
+|   +-- src/
+|       +-- M5_main_sensor_ver1.0.cpp         # 本番用ファームウェア（実センサ）
+|       +-- M5_main_dammy_ver1.0.cpp          # テスト用ファームウェア（ダミーデータ）
++-- pc_client/
+|   +-- config.ini                            # PC側設定ファイル
+|   +-- gui_client_ver1.0.py                  # PC側GUIクライアント
++-- figures/                                  # マニュアル用画像
++-- system_manual_ver1.0.pdf                  # システム説明書
++-- README.md
+\end{lstlisting}
+
+\newpage
+
+% ==================================================
+\section{ハードウェア}
+% ==================================================
+
+\subsection{M5Stack Core2}
+
+\begin{itemize}
+  \item \textbf{MCU}: ESP32（デュアルコア 240\,MHz）
+  \item \textbf{ディスプレイ}: 320$\times$240 IPS LCD
+  \item \textbf{IMU}: 内蔵6軸（加速度 + ジャイロ）
+  \item \textbf{ボタン}: A（左）、B（中央）、C（右）— タッチボタン
+  \item \textbf{ADC入力}: GPIO35 (ch A)、GPIO36 (ch B)、GPIO34 (ch C)
+  \item \textbf{SDカード}: 設定ファイル \texttt{/config.txt} を読み込み
+\end{itemize}
+
+\subsubsection{計測値の単位}
+
+本システムにおける各計測値の基本単位は以下の通りです：
+
+\begin{itemize}
+  \item \textbf{加速度}: G（$1\,\mathrm{G} \approx 9.8\,\mathrm{m/s^2}$）
+  \item \textbf{電圧}: V（ボルト）
+  \item \textbf{力}: N（ニュートン）
+  \item \textbf{ジャイロ}: dps（度/秒）
+\end{itemize}
+
+\subsubsection{加速度の方向（IMU座標系）}
+
+M5Stack Core2のIMUの各軸方向は以下の画像の通りです。
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.6\textwidth]{figures/imu_orientation.png}
+\caption{IMU座標系}
+\end{figure}
+
+\subsection{力変換行列}
+
+3チャンネルのオフセット補正後電圧値から3軸力（$F_x$, $F_y$, $F_z$）への変換には、キャリブレーション行列が使用されます。この行列はデバイス（触覚センサ）ごとに異なり、SDカードの \texttt{config.txt} に \texttt{matrix\_row0}〜\texttt{matrix\_row2} として記述します。
+
+$$
+\begin{pmatrix} F_x \\ F_y \\ F_z \end{pmatrix}
+=
+\begin{pmatrix}
+m_{00} & m_{01} & m_{02} \\
+m_{10} & m_{11} & m_{12} \\
+m_{20} & m_{21} & m_{22}
+\end{pmatrix}
+\begin{pmatrix} \Delta V_a \\ \Delta V_b \\ \Delta V_c \end{pmatrix}
+$$
+
+ここで $\Delta V = (V_{\mathrm{raw}} - V_{\mathrm{offset}}) / 1000$ であり、オフセットは起動時に50サンプル平均で自動取得されます。
+
+\vspace{1em}
+\noindent\textbf{※ 行列の値は各触覚センサに対応したキャリブレーション行列に変更してください。}
+
+% ==================================================
+\section{通信プロトコル}
+% ==================================================
+
+\subsection{ポート構成}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lll}
+\toprule
+\textbf{ポート} & \textbf{方向} & \textbf{用途} \\
+\midrule
+8000 (DATA\_PORT) & M5Stack $\to$ PC & センサデータ送信 \\
+8001 (CMD\_PORT)  & PC $\to$ M5Stack & コマンド送信 / 応答受信 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{コマンド一覧（PC → M5Stack）}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lll}
+\toprule
+\textbf{コマンド} & \textbf{書式} & \textbf{説明} \\
+\midrule
+\texttt{SEARCH} & \texttt{SEARCH} & ネットワーク上のデバイスを検索 \\
+\texttt{START}  & \texttt{START <unix\_time\_ms>} & 計測開始（引数: PCの現在時刻 ms） \\
+\texttt{STOP}   & \texttt{STOP} & 計測停止 \\
+\texttt{RATE}   & \texttt{RATE <hz>} & サンプリングレート変更（1〜1000） \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{応答（M5Stack → PC）}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lll}
+\toprule
+\textbf{応答} & \textbf{書式} & \textbf{説明} \\
+\midrule
+\texttt{SEARCH\_ACK}  & \texttt{SEARCH\_ACK <MAC> <ID> <Name>} & デバイス発見応答 \\
+\texttt{DEVICE\_NAME} & \texttt{DEVICE\_NAME <ID> <Name>}       & START時にデバイス名を返送 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{デバイス識別}
+
+デバイスの識別はMACアドレスベースで行われます。PC側の \texttt{config.ini} の \texttt{[devices]} セクションに事前登録します：
+
+\begin{lstlisting}
+[devices]
+device1 = 84:1F:E8:85:4A:E0, 1
+device2 = 84:1F:E8:85:53:68, 2
+device3 = 84:1F:E8:85:2E:10, 3
+\end{lstlisting}
+
+デバイスを追加する場合は、\texttt{device4 = <MAC>, 4} のように行を追加します。
+
+\subsection{データパケット構造（37バイト固定長）}
+
+すべての多バイト値は\textbf{ビッグエンディアン}で格納されます。
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{llll}
+\toprule
+\textbf{Offset} & \textbf{Size} & \textbf{Type} & \textbf{内容} \\
+\midrule
+0--1   & 2B & uint16 & ヘッダーマーカー (0xAAAA) \\
+2      & 1B & uint8  & デバイスID \\
+3--10  & 8B & uint64 & タイムスタンプ [ms] \\
+11--12 & 2B & int16  & ch1: 補正後電圧A [$\mathrm{V} \times 1000$] \\
+13--14 & 2B & int16  & ch2: 補正後電圧B [$\mathrm{V} \times 1000$] \\
+15--16 & 2B & int16  & ch3: 補正後電圧C [$\mathrm{V} \times 1000$] \\
+17--18 & 2B & int16  & AccX [$\mathrm{G} \times 1000$] \\
+19--20 & 2B & int16  & AccY [$\mathrm{G} \times 1000$] \\
+21--22 & 2B & int16  & AccZ [$\mathrm{G} \times 1000$] \\
+23--24 & 2B & int16  & GyroX [$\mathrm{dps} \times 10$] \\
+25--26 & 2B & int16  & GyroY [$\mathrm{dps} \times 10$] \\
+27--28 & 2B & int16  & GyroZ [$\mathrm{dps} \times 10$] \\
+29--30 & 2B & int16  & ForceX [$\mathrm{N} \times 1000$] \\
+31--32 & 2B & int16  & ForceY [$\mathrm{N} \times 1000$] \\
+33--34 & 2B & int16  & ForceZ [$\mathrm{N} \times 1000$] \\
+35--36 & 2B & uint16 & フッターマーカー (0x5555) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\newpage
+
+% ==================================================
+\section{M5Stack 操作マニュアル}
+% ==================================================
+
+\subsection{SDカード設定}
+
+M5Stack Core2 はすべての設定をSDカードの \texttt{/config.txt} から読み込みます。使用前に以下の項目を設定してください：
+
+\begin{lstlisting}
+# WiFi Settings
+wifi_ssid=YourSSID
+wifi_password=YourPassword
+
+# Device Settings
+device_id=1
+device_name=FSensor_A
+
+# Network Ports
+data_port=8000
+cmd_port=8001
+
+# Sampling Rate (Hz)
+sample_rate=200
+
+# Calibration Matrix (3x3, comma-separated per row)
+matrix_row0=0.01178285, 0.42417336, -0.62513834
+matrix_row1=-0.3731538, -0.18295395, -0.37187675
+matrix_row2=0.3773194, -0.22511071, -0.49920508
+\end{lstlisting}
+
+\textbf{注意}: \texttt{device\_name} にはスペースを含めず、最大31文字です。
+
+\subsection{起動シーケンス}
+
+\begin{enumerate}
+  \item 電源ON $\to$ SDカードから \texttt{config.txt} を読み込み
+  \item WiFi接続開始（画面に進捗表示、最大10秒でタイムアウト）
+  \item 接続成功 $\to$ IPアドレス・MACアドレス・デバイス名を表示
+  \item オフセットキャリブレーション自動実行（50サンプル平均、約100\,ms）
+  \item 「Waiting for START command...」表示 $\to$ 待機状態
+  \item リアルタイムグラフ表示開始（非計測中のみ描画）
+\end{enumerate}
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.5\textwidth]{figures/m5stack_startup.jpg}
+\caption{M5Stack 起動画面（WiFi接続後）}
+\end{figure}
+
+\subsection{ボタン操作}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{llll}
+\toprule
+\textbf{ボタン} & \textbf{操作} & \textbf{条件} & \textbf{動作} \\
+\midrule
+A（左）   & 短押し   & 非計測中 \& ロック解除時 & オフセット再キャリブレーション \\
+B（中央） & 3秒長押し & いつでも               & 表示モードロック/アンロック \\
+C（右）   & 短押し   & 非計測中 \& ロック解除時 & 表示モード切替（0$\to$1$\to$2$\to$3$\to$0） \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{表示モード（4種類）}
+
+M5Stack本体のディスプレイに表示されるリアルタイムグラフのモードです。
+
+\begin{table}[h]
+\centering
+\begin{tabular}{llll}
+\toprule
+\textbf{モード} & \textbf{名前} & \textbf{表示内容} & \textbf{Y軸範囲} \\
+\midrule
+0 & Raw Volt & 生の電圧値 (A, B, C) & 0〜3.3\,V \\
+1 & Off Volt & オフセット補正後電圧 & $\pm$2.0\,V \\
+2 & IMU      & 加速度（上段）+ ジャイロ（下段） & $\pm$1.0\,G / $\pm$250\,dps \\
+3 & Force    & 変換後の力 (X, Y, Z) & $\pm$2.0\,N \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.7\textwidth]{figures/m5stack_display_modes.jpg}
+\caption{M5Stack 表示モードの例}
+\end{figure}
+
+\subsection{計測中の画面}
+
+計測中は「\textbf{MEASURING...}」と表示され、グラフ描画は停止します。
+画面には送信先IPアドレスとサンプリングレートが表示されます。
+計測中はボタンA（キャリブレーション）とボタンC（モード切替）は無効化されます。
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.5\textwidth]{figures/m5stack_measuring.jpg}
+\caption{M5Stack 計測中画面}
+\end{figure}
+
+\subsection{ファームウェアの切り替え}
+
+\texttt{platformio.ini} の \texttt{build\_src\_filter} で使用するファームウェアを選択します：
+
+\begin{lstlisting}
+# 実センサモード（本番）
+build_src_filter = +<*.h> +<M5_main_sensor_ver1.0.cpp>
+
+# ダミーデータモード（テスト）
+build_src_filter = +<*.h> +<M5_main_dammy_ver1.0.cpp>
+\end{lstlisting}
+
+ダミーモードでは、ADC読み取りの代わりに正弦波＋ノイズのダミーデータが生成されます（IMUは実デバイスの値を使用）。
+
+\newpage
+
+% ==================================================
+\section{PC側 GUIクライアント操作マニュアル}
+% ==================================================
+
+\subsection{起動方法}
+
+\begin{lstlisting}[language=bash]
+cd pc_client/
+python gui_client_ver1.0.py
+\end{lstlisting}
+
+\subsection{前提条件}
+
+\begin{itemize}
+  \item Python 3.x
+  \item matplotlib（macOSではネイティブバックエンド、Windows/LinuxではTkAggバックエンド）
+  \item PCとM5Stackが同一WiFiネットワーク（同一サブネット）に接続されていること
+\end{itemize}
+
+\subsection{GUI構成}
+
+GUIは上部のグラフ領域と下部のコントロールパネルで構成されます。
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.95\textwidth]{figures/gui_client_screenshot.png}
+\caption{GUIクライアント画面構成}
+\end{figure}
+
+\begin{itemize}
+  \item \textbf{グラフ領域}（上部）: 接続デバイス数に応じて自動的にサブプロットが追加される。デバイスごとに3系列（X/Y/Z）を表示。
+  \item \textbf{ボタン行}: START, FREE RUN, STOP, SEARCH, Mode切替, Rate設定, Time Window設定
+  \item \textbf{Browse行}: 保存先フォルダ選択、計測状態インジケータ
+  \item \textbf{ステータス行}（最下部）: 検出デバイス一覧、デバッグログ（最新4行）
+\end{itemize}
+
+\subsection{操作手順}
+
+\subsubsection{基本的な計測フロー}
+
+\begin{enumerate}
+  \item \textbf{gui\_client\_ver1.0.py を起動} $\to$ 自動で \texttt{SEARCH} が1秒後に送信される
+  \item \textbf{デバイス検出を確認} $\to$ 画面下部にデバイス情報が表示される
+  \item （任意）\textbf{Browse...} で保存先フォルダを選択
+  \item （任意）\textbf{Rate} を変更し \textbf{Set} をクリック
+  \item （任意）\textbf{Window} でグラフの時間幅を変更し \textbf{Set} をクリック
+  \item \textbf{START} をクリック $\to$ 計測開始、CSVファイルの書き込み開始
+  \item \textbf{STOP} をクリック $\to$ 計測停止、CSVファイル保存完了
+\end{enumerate}
+
+\subsubsection{ボタン機能}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lp{10cm}}
+\toprule
+\textbf{ボタン} & \textbf{機能} \\
+\midrule
+START     & 全デバイスに計測開始コマンドを送信。保存先に日時フォルダ（YYYYMMDD\_HHMMSS）を作成し、デバイスごとのCSVファイルを生成 \\
+FREE RUN  & 計測開始コマンドを送信するが、CSVファイルは作成しない（グラフ確認用） \\
+STOP      & 全デバイスに計測停止コマンドを送信。CSVファイルをクローズ \\
+SEARCH    & ネットワーク上のM5Stackデバイスを再検索 \\
+Mode: N/V & グラフの表示モードを荷重(N)とオフセット補正後電圧(V)で切り替え \\
+Rate Set  & テキストボックスに入力されたHz値でサンプリングレートを変更（1〜1000） \\
+Window Set & グラフに表示する時間幅を変更（1〜300秒） \\
+Browse... & フォルダ選択ダイアログでCSV保存先を変更 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{注意}: SEARCHでデバイスが見つからない場合、データが届いてもCSVに記録されません。START前に必ずデバイスが検出されていることを確認してください。
+
+\newpage
+
+% ==================================================
+\section{出力データ仕様}
+% ==================================================
+
+\subsection{ファイル構成}
+
+\begin{lstlisting}
+<保存先>/
++-- YYYYMMDD_HHMMSS/           <-- START時の日時で自動生成
+    +-- device1.csv            <-- デバイスID 1 のデータ
+    +-- device2.csv            <-- デバイスID 2 のデータ
+    +-- device3.csv            <-- デバイスID 3 のデータ
+\end{lstlisting}
+
+同名フォルダが存在する場合は \texttt{YYYYMMDD\_HHMMSS(1)} のように連番が付与されます。同様に、同名CSVファイルが存在する場合は \texttt{device1(1).csv} となります。
+
+\subsection{CSVフォーマット}
+
+CSVファイルの1行目はヘッダー行で、2行目以降がデータ行です。
+
+\begin{lstlisting}
+Time_ms,DeviceID,ch1,ch2,ch3,AccX,AccY,AccZ,GyroX,GyroY,GyroZ,ForceX,ForceY,ForceZ
+1719216000000,1,0.015,-0.003,0.008,0.012,-0.998,0.043,1.2,-0.5,0.3,0.15,-0.22,0.31
+\end{lstlisting}
+
+\subsection{カラム定義}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lll}
+\toprule
+\textbf{カラム} & \textbf{単位} & \textbf{説明} \\
+\midrule
+\texttt{Time\_ms}  & ms  & Unix時間ミリ秒（等間隔の計算値） \\
+\texttt{DeviceID}  & --- & デバイス識別番号 \\
+\texttt{ch1}       & V   & オフセット補正後の電圧A \\
+\texttt{ch2}       & V   & オフセット補正後の電圧B \\
+\texttt{ch3}       & V   & オフセット補正後の電圧C \\
+\texttt{AccX}      & G   & 加速度X \\
+\texttt{AccY}      & G   & 加速度Y \\
+\texttt{AccZ}      & G   & 加速度Z \\
+\texttt{GyroX}     & dps & ジャイロX \\
+\texttt{GyroY}     & dps & ジャイロY \\
+\texttt{GyroZ}     & dps & ジャイロZ \\
+\texttt{ForceX}    & N   & 力X（行列変換後） \\
+\texttt{ForceY}    & N   & 力Y（行列変換後） \\
+\texttt{ForceZ}    & N   & 力Z（行列変換後） \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{注意}: \texttt{Time\_ms} は等間隔の計算値です。タイムスタンプは \texttt{START} コマンド受信時のPC時刻を基準に、サンプリングレートから算出されます（$t = t_{\mathrm{base}} + \mathrm{count} \times 1000 / \mathrm{rate}$）。実際のセンサ読み取り時刻やPCへの到着時刻ではありません。
+
+\newpage
+
+% ==================================================
+\section{WiFi設定}
+% ==================================================
+
+\subsection{現在の設定値}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{ll}
+\toprule
+\textbf{項目} & \textbf{値} \\
+\midrule
+SSID                  & \texttt{aterm-ea3f57} \\
+Password              & \texttt{3a7cd1ae76ee1} \\
+ブロードキャストアドレス & \texttt{192.168.179.255} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{変更方法}
+
+\begin{itemize}
+  \item \textbf{M5Stack側}: SDカードの \texttt{config.txt} 内の \texttt{wifi\_ssid} と \texttt{wifi\_password} を編集
+  \item \textbf{PC側}: \texttt{pc\_client/config.ini} の \texttt{[network]} セクション内 \texttt{broadcast\_addr} を編集
+\end{itemize}
+
+\textbf{注意}: M5StackとPCは\textbf{同一サブネット}に接続する必要があります。異なるサブネットではブロードキャストが届きません。
+
+\newpage
+
+% ==================================================
+\section{トラブルシューティング}
+% ==================================================
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lll}
+\toprule
+\textbf{症状} & \textbf{原因} & \textbf{対処} \\
+\midrule
+「WiFi FAILED!」表示          & WiFi接続失敗        & SDカードのSSID/パスワードを確認 \\
+デバイスが見つからない         & ブロードキャスト不達   & broadcast\_addrを確認 \\
+CSVが生成されない             & デバイス未検出       & SEARCH $\to$ 検出後にSTART \\
+Acc/Gyroが全て0              & ダミーモード使用中    & build\_src\_filterを確認 \\
+データが飛び飛び              & パケットロス         & レートを下げる \\
+力の値がおかしい              & 行列が不適切         & センサ固有の行列に更新 \\
+Address already in use       & ポート競合           & 前回のプロセスを終了 \\
+SDカードが読めない            & マウント失敗         & SDカードの接触・フォーマットを確認 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ==================================================
+\section{技術的な制限事項}
+% ==================================================
+
+\begin{table}[h]
+\centering
+\begin{tabular}{ll}
+\toprule
+\textbf{項目} & \textbf{制限} \\
+\midrule
+最大デバイス数          & config.iniの[devices]セクションで管理（上限なし） \\
+サンプリングレート上限    & 一台計測時約1000\,Hz。6台同時計測時には最大300\,Hz程度（実効はWiFi帯域・デバイス数に依存。） \\
+データ型精度            & int16（$\pm$32767）に量子化 \\
+UDPの信頼性            & パケットロスの可能性あり（再送なし） \\
+受信バッファ            & PC側 4\,MB（超過でパケット破棄） \\
+グラフ表示点数          & 最大500点（自動間引き） \\
+時刻同期精度            & STARTの送受信遅延分（数ms〜数十ms） \\
+デバイス名             & 最大31文字、スペース不可 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\end{document}
